@@ -594,6 +594,22 @@ func TestPrune(t *testing.T) {
 	if out, err := run(s); err != nil || !strings.Contains(out, "0 of 1 markers") {
 		t.Fatalf("prune with nothing old: %v\n%s", err, out)
 	}
+	// prune needs no clone: from a directory that is not a repository it still
+	// reads the markers' dates.
+	testgit.Append(t, w.dir, "e2e/tests/a.spec.ts")
+	testgit.Commit(t, w.dir, "e2e change")
+	w.check("e2e-web")
+	w.mark("e2e-web", func(s *settings.Settings) {
+		s.Now = func() time.Time { return time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC) }
+	})
+	notRepo := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(notRepo))
+	outside := s
+	outside.Dir = notRepo
+	if out, err := run(outside); err != nil || !strings.Contains(out, "deleted 1 markers") || w.markerSHA(recentRef) == "" {
+		t.Fatalf("prune outside a repository: %v\n%s", err, out)
+	}
+
 	s.Days = "soon"
 	if _, err := run(s); err == nil {
 		t.Fatal("prune without a number of days succeeded")
@@ -698,4 +714,43 @@ func TestUnreadableMarkerStillSkips(t *testing.T) {
 	if attempts != 3 || !strings.Contains(string(b), "  pipeline: 5") {
 		t.Fatalf("after %d attempts the skip says:\n%s", attempts, b)
 	}
+}
+
+// CI checkouts are usually shallow (actions/checkout defaults to depth 1), and
+// the marker that matches is usually on an earlier commit than HEAD, outside
+// the checkout's history.
+func TestShallowWorkspace(t *testing.T) {
+	w := newWS(t)
+	noScratchLeft(t)
+	w.check("android-api-29")
+	w.mark("android-api-29", func(s *settings.Settings) { s.PipelineNum = "9" })
+	testgit.Append(t, w.dir, "e2e/tests/a.spec.ts")
+	testgit.Commit(t, w.dir, "e2e change")
+
+	// The remote is the origin the checkout came from, so it has HEAD.
+	testgit.Git(t, w.dir, "push", "-q", w.remote, "HEAD:refs/heads/master")
+	shallow := filepath.Join(t.TempDir(), "shallow")
+	testgit.Git(t, w.dir, "clone", "-q", "--depth", "1", w.remote, shallow)
+	boundary := testgit.Git(t, shallow, "rev-parse", "HEAD")
+	sw := &ws{t: t, dir: shallow, remote: w.remote}
+	out := sw.check("android-api-29")
+	b, err := os.ReadFile(plugin.SkipFile(shallow, "android-api-29"))
+	if err != nil || strings.Contains(string(b), "marker unreadable") || !strings.Contains(string(b), "  pipeline: 9") {
+		t.Fatalf("a marker below a shallow checkout's boundary must be read: %v\n%s\n%s", err, b, out)
+	}
+	if got := testgit.Git(t, shallow, "rev-parse", "--is-shallow-repository"); got != "true" {
+		t.Fatal("the checkout is no longer shallow")
+	}
+	if got := strings.TrimSpace(readFile(t, filepath.Join(shallow, ".git", "shallow"))); got != boundary {
+		t.Fatalf("the checkout's shallow boundary moved: %q, want %q", got, boundary)
+	}
+}
+
+func readFile(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

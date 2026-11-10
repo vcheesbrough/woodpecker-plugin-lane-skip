@@ -6,8 +6,10 @@
 package plugin
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +70,9 @@ func logf(out io.Writer, format string, args ...any) {
 // into the workspace would cut its history for every later step of the
 // pipeline. The scratch repository borrows the workspace's objects (when the
 // workspace is a repository) through alternates, so a fetch still transfers
-// only what the workspace lacks.
+// only what the workspace lacks. A shallow workspace's shallow file comes too:
+// without it the scratch repository would claim the borrowed commits' whole
+// history, and the server would leave out a marker commit below the boundary.
 func scratchRepo(workspace string) (string, func(), error) {
 	dir, err := os.MkdirTemp("", "lane-skip-")
 	if err != nil {
@@ -79,12 +83,30 @@ func scratchRepo(workspace string) (string, func(), error) {
 		cleanup()
 		return "", nil, err
 	}
-	if objects, err := tree.Output(workspace, "rev-parse", "--path-format=absolute", "--git-path", "objects"); err == nil {
-		alternates := filepath.Join(dir, "objects", "info", "alternates")
-		if err := os.WriteFile(alternates, []byte(strings.TrimSpace(string(objects))+"\n"), 0o644); err != nil {
+	objects, err := tree.Output(workspace, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return dir, cleanup, nil // not a repository: nothing to borrow
+	}
+	alternates := filepath.Join(dir, "objects", "info", "alternates")
+	if err := os.WriteFile(alternates, []byte(strings.TrimSpace(string(objects))+"\n"), 0o644); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	shallowPath, err := tree.Output(workspace, "rev-parse", "--path-format=absolute", "--git-path", "shallow")
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	shallow, err := os.ReadFile(strings.TrimSpace(string(shallowPath)))
+	switch {
+	case err == nil:
+		if err := os.WriteFile(filepath.Join(dir, "shallow"), shallow, 0o644); err != nil {
 			cleanup()
 			return "", nil, err
 		}
+	case !errors.Is(err, fs.ErrNotExist):
+		cleanup()
+		return "", nil, err
 	}
 	return dir, cleanup, nil
 }
