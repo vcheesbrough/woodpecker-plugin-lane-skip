@@ -217,6 +217,30 @@ func (w *ws) mark(step string, edit ...func(*settings.Settings)) string {
 	return out
 }
 
+// fullClone fails the test if the workspace lost history: a marker fetch must
+// never make the consumer's clone shallow.
+func (w *ws) fullClone(commits string) {
+	w.t.Helper()
+	if got := testgit.Git(w.t, w.dir, "rev-parse", "--is-shallow-repository"); got != "false" {
+		w.t.Fatalf("the workspace became a shallow clone")
+	}
+	if got := testgit.Git(w.t, w.dir, "rev-list", "--count", "HEAD"); got != commits {
+		w.t.Fatalf("HEAD has %s commits, want %s: the workspace lost history", got, commits)
+	}
+}
+
+// noScratchLeft points TMPDIR at an empty directory and checks, at the end of
+// the test, that every scratch repository was removed.
+func noScratchLeft(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	t.Cleanup(func() {
+		if left, _ := os.ReadDir(tmp); len(left) > 0 {
+			t.Errorf("left in TMPDIR: %v", left)
+		}
+	})
+}
+
 func (w *ws) skipping(step string) bool {
 	_, err := os.Stat(plugin.SkipFile(w.dir, step))
 	return err == nil
@@ -257,6 +281,9 @@ func guard(t *testing.T, dir, step string) (ran bool, out string) {
 
 func TestCheckAndMark(t *testing.T) {
 	w := newWS(t)
+	noScratchLeft(t)
+	// History under the marked commit, so a shallow fetch would cut it.
+	testgit.Commit(t, w.dir, "history")
 	keys := laneKeys(t, w.dir)
 
 	out := w.check("android-api-29")
@@ -326,6 +353,7 @@ func TestCheckAndMark(t *testing.T) {
 	if !w.skipping("android-api-29") {
 		t.Fatal("another lane's change lost the skip")
 	}
+	w.fullClone("3") // the marker's commit is HEAD~1
 	out = w.mark("android-api-29", func(s *settings.Settings) { s.PipelineNum = "8" })
 	if !strings.Contains(out, "already marked") {
 		t.Fatalf("mark after a skip: %s", out)
@@ -453,6 +481,26 @@ func TestFailuresRunAndNeverFailTheStep(t *testing.T) {
 		t.Fatalf("mark outside a repository must warn, not fail: %v\n%s", err, out)
 	}
 
+	// A lane whose key cannot be computed runs, and leaves no key for mark;
+	// the other steps of the same check are still decided.
+	testgit.Write(t, w.dir, map[string]string{".woodpecker/lanes.yml": lanesYML + "  broken:\n    context: Dockerfile.gone\n    steps: [gone]\n"})
+	testgit.Commit(t, w.dir, "a lane with a missing Dockerfile")
+	w.check("e2e-web") // lanes.yml is in every key: mark the new web key
+	w.mark("e2e-web")
+	out = w.check("gone", "e2e-web")
+	if !strings.Contains(out, "WARNING: could not compute the broken key") || w.skipping("gone") {
+		t.Fatalf("an uncomputable key must warn and run:\n%s", out)
+	}
+	if _, err := os.Stat(plugin.KeyFile(w.dir, "gone")); err == nil {
+		t.Fatal("an uncomputable key left a key file")
+	}
+	if !w.skipping("e2e-web") {
+		t.Fatalf("one lane's broken key stopped another's skip:\n%s", out)
+	}
+	if out := w.mark("gone"); !strings.Contains(out, "WARNING: no key from check") {
+		t.Fatalf("mark after an uncomputable key: %s", out)
+	}
+
 	// mark without check's key.
 	fresh := newWS(t)
 	if out := fresh.mark("e2e-web"); !strings.Contains(out, "WARNING: no key from check") {
@@ -512,6 +560,8 @@ func TestWorkflowTyposFail(t *testing.T) {
 
 func TestPrune(t *testing.T) {
 	w := newWS(t)
+	noScratchLeft(t)
+	testgit.Commit(t, w.dir, "history")
 	w.check("e2e-web", "android-api-29")
 	w.mark("e2e-web", func(s *settings.Settings) {
 		s.Now = func() time.Time { return time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC) }
@@ -540,6 +590,7 @@ func TestPrune(t *testing.T) {
 	if refs := testgit.Git(t, w.dir, "for-each-ref", "refs/lane-skip/"); refs != "" {
 		t.Fatalf("prune left local refs:\n%s", refs)
 	}
+	w.fullClone("2")
 	if out, err := run(s); err != nil || !strings.Contains(out, "0 of 1 markers") {
 		t.Fatalf("prune with nothing old: %v\n%s", err, out)
 	}
@@ -604,5 +655,47 @@ func TestFiles(t *testing.T) {
 	s.Lane = "prod"
 	if _, err := run(s); err == nil {
 		t.Fatal("files of an unknown lane succeeded")
+	}
+}
+
+// The one error path that still skips: ls-remote lists the marker, so the key
+// passed, but the marker itself cannot be fetched to label the skip.
+func TestUnreadableMarkerStillSkips(t *testing.T) {
+	w := newWS(t)
+	noScratchLeft(t)
+	w.check("e2e-web")
+	w.mark("e2e-web", func(s *settings.Settings) { s.PipelineNum = "5" })
+
+	attempts := 0
+	restore := plugin.SetFetchMarker(func(dir, refspec string) error {
+		attempts++
+		return os.ErrPermission
+	})
+	out := w.check("e2e-web")
+	restore()
+	b, err := os.ReadFile(plugin.SkipFile(w.dir, "e2e-web"))
+	if err != nil || !strings.Contains(string(b), "marker unreadable") || !strings.Contains(out, "SKIPPING e2e-web") {
+		t.Fatalf("an unreadable marker must still skip: %v\n%s", err, out)
+	}
+	if attempts != 5 {
+		t.Fatalf("fetched %d times, want 5 attempts", attempts)
+	}
+	if refs := testgit.Git(t, w.dir, "for-each-ref", "refs/lane-skip/"); refs != "" {
+		t.Fatalf("left local refs:\n%s", refs)
+	}
+
+	// A fetch that fails twice, then works, labels the skip with the marker.
+	attempts = 0
+	restore = plugin.SetFetchMarker(func(dir, refspec string) error {
+		if attempts++; attempts < 3 {
+			return os.ErrPermission
+		}
+		return plugin.RealFetchMarker(w.remote, dir, refspec)
+	})
+	defer restore()
+	w.check("e2e-web")
+	b, _ = os.ReadFile(plugin.SkipFile(w.dir, "e2e-web"))
+	if attempts != 3 || !strings.Contains(string(b), "  pipeline: 5") {
+		t.Fatalf("after %d attempts the skip says:\n%s", attempts, b)
 	}
 }

@@ -86,9 +86,9 @@ func FromEnv() (Settings, error) {
 	switch s.Mode {
 	case ModeCheck, ModeMark, ModePrune, ModeVerify, ModeFiles:
 	case "":
-		return s, fmt.Errorf("mode is required: check, mark, prune or verify")
+		return s, fmt.Errorf("mode is required: check, mark, prune, verify or files")
 	default:
-		return s, fmt.Errorf("unknown mode %q: expected check, mark, prune or verify", s.Mode)
+		return s, fmt.Errorf("unknown mode %q: expected check, mark, prune, verify or files", s.Mode)
 	}
 	return s, nil
 }

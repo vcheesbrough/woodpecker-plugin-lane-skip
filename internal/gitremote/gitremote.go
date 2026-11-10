@@ -116,7 +116,9 @@ func (r Remote) CreateRef(dir, object, ref string) error {
 }
 
 // Fetch fetches refspec into the repository at dir. --depth=1 keeps it to the
-// tag objects and their commits, never the commits' history.
+// tag objects and their commits, never the commits' history — and makes dir a
+// shallow repository, so dir must be a scratch repository (see
+// plugin.scratchRepo), never the consumer's workspace.
 func (r Remote) Fetch(dir, refspec string) error {
 	_, err := r.run(dir, "", "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--depth=1", r.URL, refspec)
 	return err

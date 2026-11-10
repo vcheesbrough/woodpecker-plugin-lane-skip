@@ -10,17 +10,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/gitremote"
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/key"
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/lanes"
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/settings"
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/tree"
 )
 
-// fetchAttempts bounds the retries of a marker fetch: a --depth fetch takes the
-// clone's shallow lock, which another step checking in the same clone may hold.
+// fetchAttempts bounds the retries of a marker fetch, which only labels a skip
+// ls-remote already decided.
 const fetchAttempts = 5
 
-var fetchBackoff = time.Second
+var (
+	fetchBackoff = time.Second
+	fetchMarker  = func(r gitremote.Remote, dir, refspec string) error { return r.Fetch(dir, refspec) }
+)
 
 // runCheck decides, per step, whether its key has already passed. Any doubt
 // means "run": an error never writes a skip file. It fails only on a workflow
@@ -121,16 +125,21 @@ func runCheck(s settings.Settings, out io.Writer) error {
 	return nil
 }
 
-// markerMessage fetches a marker into a per-step local ref (both emulator
-// steps of a pipeline may be checking at once in one shared clone) and returns
-// its message. A marker that exists but cannot be read still skips: ls-remote
-// already proved the key passed.
+// markerMessage fetches a marker into a scratch repository (never the
+// workspace: see scratchRepo) and returns its message. A marker that exists but
+// cannot be read still skips: ls-remote already proved the key passed.
 func markerMessage(s settings.Settings, step, ref string) string {
-	remote := remoteFor(s)
+	unreadable := func(err error) string {
+		return fmt.Sprintf("(%s — marker unreadable: %s)\n", ref, lastLine(err.Error()))
+	}
+	scratch, cleanup, err := scratchRepo(s.Dir)
+	if err != nil {
+		return unreadable(err)
+	}
+	defer cleanup()
 	local := "refs/lane-skip/check/" + step
-	var err error
 	for attempt := 1; attempt <= fetchAttempts; attempt++ {
-		if err = remote.Fetch(s.Dir, "+"+ref+":"+local); err == nil {
+		if err = fetchMarker(remoteFor(s), scratch, "+"+ref+":"+local); err == nil {
 			break
 		}
 		if attempt < fetchAttempts {
@@ -138,12 +147,11 @@ func markerMessage(s settings.Settings, step, ref string) string {
 		}
 	}
 	if err != nil {
-		return fmt.Sprintf("(%s — marker unreadable: %s)\n", ref, lastLine(err.Error()))
+		return unreadable(err)
 	}
-	defer func() { _ = tree.Git(s.Dir, "update-ref", "-d", local).Run() }()
-	raw, err := tree.Output(s.Dir, "cat-file", "tag", local)
+	raw, err := tree.Output(scratch, "cat-file", "tag", local)
 	if err != nil {
-		return fmt.Sprintf("(%s — marker unreadable: %s)\n", ref, lastLine(err.Error()))
+		return unreadable(err)
 	}
 	_, msg, _ := strings.Cut(string(raw), "\n\n")
 	return msg

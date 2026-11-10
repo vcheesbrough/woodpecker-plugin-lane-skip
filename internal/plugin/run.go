@@ -8,11 +8,14 @@ package plugin
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/gitremote"
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/settings"
+	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/tree"
 )
 
 // MarkerPrefix is the marker namespace: a marker is an annotated tag object at
@@ -58,4 +61,30 @@ func remoteFor(s settings.Settings) gitremote.Remote {
 
 func logf(out io.Writer, format string, args ...any) {
 	fmt.Fprintf(out, "lane-skip: "+format+"\n", args...)
+}
+
+// scratchRepo makes a throwaway bare repository to fetch markers into. A
+// --depth fetch records the fetched commits as shallow boundaries, so fetching
+// into the workspace would cut its history for every later step of the
+// pipeline. The scratch repository borrows the workspace's objects (when the
+// workspace is a repository) through alternates, so a fetch still transfers
+// only what the workspace lacks.
+func scratchRepo(workspace string) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "lane-skip-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	if _, err := tree.Output("", "init", "-q", "--bare", dir); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if objects, err := tree.Output(workspace, "rev-parse", "--path-format=absolute", "--git-path", "objects"); err == nil {
+		alternates := filepath.Join(dir, "objects", "info", "alternates")
+		if err := os.WriteFile(alternates, []byte(strings.TrimSpace(string(objects))+"\n"), 0o644); err != nil {
+			cleanup()
+			return "", nil, err
+		}
+	}
+	return dir, cleanup, nil
 }

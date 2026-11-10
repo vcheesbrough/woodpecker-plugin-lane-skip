@@ -93,7 +93,7 @@ steps:
 |---|---|
 | `check` | For each of `steps`: writes `.lane/<step>.key`; if `refs/ci/green/<step>/<key>` exists, writes `.lane/<step>.skip` holding the marker's message. One `ls-remote` for all steps. |
 | `mark` | Reads `.lane/<step>.key` and creates `refs/ci/green/<step>/<key>`, create-only. |
-| `prune` | Deletes markers whose tag is older than `days`; `dry_run` lists them instead. Needs a clone as its workspace. |
+| `prune` | Deletes markers whose tag is older than `days`; `dry_run` lists them instead. |
 | `verify` | Checks the config against HEAD and prints each lane's file count and key. |
 | `files` | Prints every file `lane`'s key covers, one per line, for a repository's own checks of its lanes. |
 
@@ -110,7 +110,7 @@ steps:
 | `github_token` | check, mark, prune | the `GITHUB_TOKEN` environment variable; reading a public repo needs none, `mark` and `prune` need contents write |
 | `git_remote` | check, mark, prune | `https://github.com/<CI_REPO>.git` |
 
-The marker message names `CI_COMMIT_BRANCH`, `CI_PIPELINE_NUMBER` and `CI_PIPELINE_URL`. The token travels in a git HTTP header scoped to the remote URL, never in a URL or on a command line, and replaces any header the checkout configured.
+The marker message names `CI_COMMIT_BRANCH`, `CI_PIPELINE_NUMBER` and `CI_PIPELINE_URL`. The token travels in a git HTTP header scoped to the remote URL, never in a URL or on a command line, and replaces any header the checkout configured. Markers are fetched into a throwaway repository, never the workspace, so the clone's history is never cut by a shallow fetch.
 
 ## Markers and pruning
 
