@@ -1,0 +1,6 @@
+# The e2e smoke test's lanes, checked against this repository's own remote.
+lanes:
+  smoke:
+    context: Dockerfile
+    inputs: [internal, go.mod, go.sum]
+    steps: [e2e-smoke]

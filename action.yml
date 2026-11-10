@@ -1,0 +1,37 @@
+name: lane-skip
+description: Skip a test step whose inputs have already passed; the decision travels through .lane/<step>.skip.
+inputs:
+  mode:
+    description: check (before the tests), mark (after they pass), prune, verify, or files
+    required: true
+  config:
+    description: Lane config path inside the commit
+    required: false
+    default: .woodpecker/lanes.yml
+  steps:
+    description: Comma-separated steps to decide (check)
+    required: false
+  step:
+    description: The step that passed (mark)
+    required: false
+  days:
+    description: Delete markers older than this many days (prune)
+    required: false
+  dry_run:
+    description: List what prune would delete, delete nothing
+    required: false
+  full_run:
+    description: Anything but empty, 0, false, no or off runs every step (check); FULL_RUN in the environment does the same
+    required: false
+  lane:
+    description: The lane whose covered files to list (files)
+    required: false
+  github_token:
+    description: Token for the marker refs; contents read (check, public repos need none) or write (mark, prune)
+    required: false
+  git_remote:
+    description: Remote holding the markers; defaults to https://github.com/<GITHUB_REPOSITORY>.git
+    required: false
+runs:
+  using: docker
+  image: Dockerfile

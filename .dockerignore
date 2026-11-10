@@ -1,0 +1,5 @@
+.git
+.github
+.lane
+**/*.md
+!README.md

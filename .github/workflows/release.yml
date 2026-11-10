@@ -1,0 +1,108 @@
+name: release
+
+# One run = one version = one image, built and tested once, then published
+# unchanged (the agent-shared release-flow contract). The version comes from
+# woodpecker-plugin-release-versions, pinned by digest: `version` claims the
+# next patch on internal/version/version.go's MAJOR.MINOR line, `publish` pushes
+# ghcr.io/<repo>:<version> and nothing else, and `tag` writes the git tag that
+# says "this build was released".
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: false = build and test only (the claimed version becomes a gap). true = publish the image, push the git tag and create the GitHub release.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write # version claims refs/builds/<version>; tag pushes the git tag
+  packages: write # publish pushes the image to ghcr
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  RELEASE_VERSIONS: ghcr.io/vcheesbrough/woodpecker-plugin-release-versions:0.2.0@sha256:9d5b3541aa143727f8c68c8c8f1d36557d999d3c857c4581be43363c8ff78c94
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Claim the version
+        env:
+          PLUGIN_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -e GITHUB_ACTIONS -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_REF_NAME \
+            -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT -e PLUGIN_GITHUB_TOKEN \
+            -e PLUGIN_MODE=version -e PLUGIN_MAJOR_MINOR_SOURCE=go \
+            "$RELEASE_VERSIONS"
+          echo "RELEASE_TAG=$(cat .release-tag)" >> "$GITHUB_ENV"
+
+      - name: go test
+        run: go test -race ./...
+      - name: Context matcher against BuildKit
+        run: go test -tags docker ./internal/key/
+
+      - name: Build the image
+        run: |
+          docker build \
+            --build-arg RELEASE_TAG="$RELEASE_TAG" \
+            --label org.opencontainers.image.version="$RELEASE_TAG" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.source="https://github.com/$GITHUB_REPOSITORY" \
+            -t "$IMAGE:$RELEASE_TAG" .
+      - name: Image smoke test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: PLUGIN_IMAGE="$IMAGE:$RELEASE_TAG" go test -tags e2e -v ./test/e2e/
+
+      - name: Publish the image
+        if: inputs.publish
+        env:
+          PLUGIN_REGISTRY_USERNAME: ${{ github.actor }}
+          PLUGIN_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/workspace" -w /workspace \
+            -e GITHUB_ACTIONS -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_REF_NAME \
+            -e PLUGIN_REGISTRY_USERNAME -e PLUGIN_REGISTRY_PASSWORD \
+            -e PLUGIN_MODE=publish -e PLUGIN_IMAGES="$IMAGE" \
+            "$RELEASE_VERSIONS"
+      - name: Push the git tag
+        if: inputs.publish
+        env:
+          PLUGIN_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -e GITHUB_ACTIONS -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_REF_NAME -e PLUGIN_GITHUB_TOKEN \
+            -e PLUGIN_MODE=tag \
+            "$RELEASE_VERSIONS"
+      - uses: docker/login-action@v3
+        if: inputs.publish
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read the published digest
+        if: inputs.publish
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "DIGEST=$DIGEST" >> "$GITHUB_ENV"
+          echo "Published $IMAGE:$RELEASE_TAG@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Create the GitHub release
+        if: inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          body: |
+            **Image:** `${{ env.IMAGE }}:${{ env.RELEASE_TAG }}@${{ env.DIGEST }}`
+
+            ```yaml
+            image: ${{ env.IMAGE }}:${{ env.RELEASE_TAG }}@${{ env.DIGEST }}
+            ```
+          generate_release_notes: true
