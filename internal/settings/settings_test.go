@@ -29,7 +29,7 @@ func TestWoodpeckerSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if s.Mode != ModeCheck || !reflect.DeepEqual(s.Steps, []string{"android-api-29", "android-api-36"}) ||
-		s.GitHubToken != "tok" || s.GitRemote != "https://github.com/owner/repo.git" || s.Config != ".woodpecker/lanes.yml" ||
+		s.GitHubToken != "tok" || s.GitRemote != "https://github.com/owner/repo.git" || s.Config != "lanes.yml" ||
 		s.Branch != "feat/x" || s.PipelineNum != "7" || s.PipelineURL != "https://ci/7" || s.FullRunSet() {
 		t.Fatalf("settings = %+v", s)
 	}

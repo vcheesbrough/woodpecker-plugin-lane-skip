@@ -32,9 +32,9 @@ func TestGoldenKey(t *testing.T) {
 	// The same through real git: blob ids are content addresses, so a fixed
 	// set of files has a fixed key on any machine.
 	dir := testgit.Repo(t, map[string]string{
-		".woodpecker/lanes.yml": "lanes:\n  unit:\n    inputs: [src]\n    steps: [test]\n",
-		"src/main.go":           "package main\n",
-		"docs/readme.md":        "not covered\n",
+		"lanes.yml":      "lanes:\n  unit:\n    inputs: [src]\n    steps: [test]\n",
+		"src/main.go":    "package main\n",
+		"docs/readme.md": "not covered\n",
 	})
 	tr, err := tree.Read(dir, "HEAD")
 	if err != nil {
@@ -48,7 +48,7 @@ func TestGoldenKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantRepo = "33f643cce41fb0756e12fe64d65bf13d87ebf297f6dbe35c74b54cf82d80bf4f"
+	const wantRepo = "e237fff16b8bebcc2db653b654150ba8979dd849b3250cb93aadca7b16bc4400"
 	if got != wantRepo {
 		t.Fatalf("repo key = %s, want %s", got, wantRepo)
 	}
@@ -91,7 +91,7 @@ func TestIgnoreFileFollowsBuildKit(t *testing.T) {
 
 func TestCoveredAddsInputsAndImplicitFiles(t *testing.T) {
 	dir := testgit.Repo(t, map[string]string{
-		".woodpecker/lanes.yml":       "lanes:\n  web:\n    context: Dockerfile.web\n    inputs: [e2e, deploy/grafana/d.json]\n    steps: [e2e-web]\n",
+		"lanes.yml":                   "lanes:\n  web:\n    context: Dockerfile.web\n    inputs: [e2e, deploy/grafana/d.json]\n    steps: [e2e-web]\n",
 		".woodpecker/web.yml":         "",
 		"Dockerfile.web":              "",
 		"Dockerfile.web.dockerignore": "*\n!src\n",
@@ -111,14 +111,14 @@ func TestCoveredAddsInputsAndImplicitFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{".woodpecker/lanes.yml", "Dockerfile.web", "Dockerfile.web.dockerignore", "deploy/grafana/d.json", "e2e/t.spec", "src/a.rs"}
+	want := []string{"Dockerfile.web", "Dockerfile.web.dockerignore", "deploy/grafana/d.json", "e2e/t.spec", "lanes.yml", "src/a.rs"}
 	if got := paths(covered); !reflect.DeepEqual(got, want) {
 		t.Fatalf("covered = %v\nwant      %v", got, want)
 	}
 }
 
 func TestContextIsRequiredToExist(t *testing.T) {
-	dir := testgit.Repo(t, map[string]string{".woodpecker/lanes.yml": "lanes:\n  web:\n    context: Dockerfile.web\n    steps: [s]\n"})
+	dir := testgit.Repo(t, map[string]string{"lanes.yml": "lanes:\n  web:\n    context: Dockerfile.web\n    steps: [s]\n"})
 	tr, _ := tree.Read(dir, "HEAD")
 	cfg, _ := LoadConfig(tr, lanes.DefaultPath)
 	if _, err := Covered(tr, cfg, cfg.Lanes["web"]); err == nil {

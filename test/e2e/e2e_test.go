@@ -51,7 +51,7 @@ func TestImageRoundTrip(t *testing.T) {
 	}
 	testgit.Git(t, repo, "init", "-q")
 	testgit.Write(t, repo, map[string]string{
-		".woodpecker/lanes.yml":       "lanes:\n  web:\n    context: Dockerfile.web\n    inputs: [e2e]\n    steps: [e2e-web]\n",
+		"lanes.yml":                   "lanes:\n  web:\n    context: Dockerfile.web\n    inputs: [e2e]\n    steps: [e2e-web]\n",
 		"Dockerfile.web":              "FROM scratch\n",
 		"Dockerfile.web.dockerignore": "docs\n",
 		"src/app.js":                  "app\n",

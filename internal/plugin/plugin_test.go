@@ -42,7 +42,7 @@ const lanesYML = `lanes:
 func fixture(t *testing.T) string {
 	t.Helper()
 	return testgit.Repo(t, map[string]string{
-		".woodpecker/lanes.yml":               lanesYML,
+		"lanes.yml":                           lanesYML,
 		".woodpecker/android.yml":             "steps: {}\n",
 		".woodpecker/web.yml":                 "steps: {}\n",
 		".woodpecker/checks.yml":              "steps: {}\n",
@@ -141,7 +141,7 @@ func TestWhichChangeMovesWhichKey(t *testing.T) {
 		{"crates/ source change", same, changed, changed, appendTo("crates/server/src/main.rs")},
 		{"Cargo.toml change", changed, changed, changed, appendTo("Cargo.toml")},
 		{"check-image-metadata.sh change", changed, changed, same, appendTo("scripts/check-image-metadata.sh")},
-		{"lanes.yml change", changed, changed, changed, appendTo(".woodpecker/lanes.yml")},
+		{"lanes.yml change", changed, changed, changed, appendTo("lanes.yml")},
 		{"new root file", same, changed, same, touch("new-root-file")},
 	} {
 		before := laneKeys(t, dir)
@@ -483,7 +483,7 @@ func TestFailuresRunAndNeverFailTheStep(t *testing.T) {
 
 	// A lane whose key cannot be computed runs, and leaves no key for mark;
 	// the other steps of the same check are still decided.
-	testgit.Write(t, w.dir, map[string]string{".woodpecker/lanes.yml": lanesYML + "  broken:\n    context: Dockerfile.gone\n    steps: [gone]\n"})
+	testgit.Write(t, w.dir, map[string]string{"lanes.yml": lanesYML + "  broken:\n    context: Dockerfile.gone\n    steps: [gone]\n"})
 	testgit.Commit(t, w.dir, "a lane with a missing Dockerfile")
 	w.check("e2e-web") // lanes.yml is in every key: mark the new web key
 	w.mark("e2e-web")
@@ -628,7 +628,7 @@ func TestVerify(t *testing.T) {
 		t.Fatalf("verify of a good config: %v\n%s", err, out)
 	}
 
-	testgit.Write(t, w.dir, map[string]string{".woodpecker/lanes.yml": strings.Replace(lanesYML, "deploy/grafana", "deploy/grafna", 1) +
+	testgit.Write(t, w.dir, map[string]string{"lanes.yml": strings.Replace(lanesYML, "deploy/grafana", "deploy/grafna", 1) +
 		"  broken:\n    context: Dockerfile.gone\n    steps: [gone]\n"})
 	testgit.Commit(t, w.dir, "typos")
 	_, err = run(w.settings(settings.ModeVerify))
@@ -637,10 +637,33 @@ func TestVerify(t *testing.T) {
 		t.Fatalf("verify of typos: %v", err)
 	}
 
-	testgit.Write(t, w.dir, map[string]string{".woodpecker/lanes.yml": "lanes:\n  web:\n    inptus: [e2e]\n"})
+	testgit.Write(t, w.dir, map[string]string{"lanes.yml": "lanes:\n  web:\n    inptus: [e2e]\n"})
 	testgit.Commit(t, w.dir, "unknown key")
 	if _, err := run(w.settings(settings.ModeVerify)); err == nil {
 		t.Fatal("verify of an unknown key succeeded")
+	}
+}
+
+// Woodpecker parses every YAML file in .woodpecker/ as a workflow, so a lane
+// config there fails the pipeline: every mode but files says so.
+func TestWarnsOnConfigInWorkflowDir(t *testing.T) {
+	w := newWS(t)
+	if out, err := run(w.settings(settings.ModeVerify)); err != nil || strings.Contains(out, "WARNING") {
+		t.Fatalf("verify of the default config: %v\n%s", err, out)
+	}
+
+	testgit.Write(t, w.dir, map[string]string{".woodpecker/lanes.yml": lanesYML})
+	testgit.Commit(t, w.dir, "config in .woodpecker/")
+	s := w.settings(settings.ModeVerify)
+	s.Config = ".woodpecker/lanes.yml"
+	out, err := run(s)
+	if err != nil || !strings.Contains(out, "WARNING: config .woodpecker/lanes.yml is inside .woodpecker/") {
+		t.Fatalf("verify of a config in .woodpecker/: %v\n%s", err, out)
+	}
+
+	s.Mode, s.Lane = settings.ModeFiles, "web"
+	if out, err := run(s); err != nil || strings.Contains(out, "WARNING") {
+		t.Fatalf("files must print only files: %v\n%s", err, out)
 	}
 }
 
@@ -658,7 +681,7 @@ func TestFiles(t *testing.T) {
 		has[f] = true
 	}
 	for _, want := range []string{"frontend/index.html", "crates/server/src/main.rs", "e2e/tests/a.spec.ts", "deploy/grafana/dashboard.json",
-		".woodpecker/lanes.yml", ".woodpecker/web.yml", "Dockerfile.web", "Dockerfile.web.dockerignore", "scripts/check-image-metadata.sh"} {
+		"lanes.yml", ".woodpecker/web.yml", "Dockerfile.web", "Dockerfile.web.dockerignore", "scripts/check-image-metadata.sh"} {
 		if !has[want] {
 			t.Errorf("web covers no %s", want)
 		}
