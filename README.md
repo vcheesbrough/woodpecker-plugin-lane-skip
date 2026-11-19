@@ -14,7 +14,7 @@ Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). This
 
 ## How it works
 
-- **Lane**: a set of files and the test steps that pass or fail on them, declared in `.woodpecker/lanes.yml`.
+- **Lane**: a set of files and the test steps that pass or fail on them, declared in `lanes.yml` at the repository root.
 - **Key**: a sha256 over the header `lane-skip key v1` and one `<mode> <blob> <path>` line per covered file, sorted in byte order (`LC_ALL=C`), read from `git ls-tree -r HEAD`. It is the commit's content, never the working tree: an uncommitted edit, the release tag or the pipeline number never change it. A commit whose covered files are unchanged has the same key, whatever else changed.
 - **Covered files** of a lane:
   - its build context, when it has one: every tracked file Docker would send for `docker build -f <context> .`, through the ignore file BuildKit would use (`<context>.dockerignore`, else the root `.dockerignore`), read from HEAD and matched with Docker's own matcher (`moby/patternmatcher`). Derived, never listed, so a file added to the context is in the key by construction. A test holds this to a real BuildKit `COPY .` listing for every pattern case;
@@ -22,7 +22,9 @@ Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). This
   - implicitly: the lane config itself, the Dockerfile and the ignore file in use.
 - **Marker**: an annotated tag object at `refs/ci/green/<step>/<key>` on the remote, recording the commit, branch, pipeline number and URL that passed. It is pushed create-only, so a marker is never overwritten. Each step has its own marker: a pass on API 29 says nothing about API 36.
 
-## `.woodpecker/lanes.yml`
+## `lanes.yml`
+
+Keep it at the repository root (the default), or anywhere else **outside `.woodpecker/`**: Woodpecker parses every YAML file in `.woodpecker/` as a workflow, so a lane config there fails every pipeline with `Invalid or missing steps section`.
 
 ```yaml
 lanes:
@@ -100,7 +102,7 @@ steps:
 | Setting | Used by | Default |
 |---|---|---|
 | `mode` | all | required |
-| `config` | all | `.woodpecker/lanes.yml` (read from HEAD) |
+| `config` | all | `lanes.yml` (read from HEAD); never inside `.woodpecker/` |
 | `steps` | check | required: list, or comma-separated |
 | `step` | mark | required |
 | `full_run` | check | the `FULL_RUN` environment variable |

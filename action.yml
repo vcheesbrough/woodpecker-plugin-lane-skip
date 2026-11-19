@@ -7,7 +7,7 @@ inputs:
   config:
     description: Lane config path inside the commit
     required: false
-    default: .woodpecker/lanes.yml
+    default: lanes.yml
   steps:
     description: Comma-separated steps to decide (check)
     required: false

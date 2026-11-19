@@ -1,5 +1,5 @@
-// Package lanes reads the consumer's lane configuration (.woodpecker/lanes.yml
-// by default):
+// Package lanes reads the consumer's lane configuration (lanes.yml at the
+// repository root by default):
 //
 //	lanes:
 //	  web:
@@ -21,8 +21,9 @@ import (
 )
 
 // DefaultPath is where the config lives unless the `config` setting says
-// otherwise.
-const DefaultPath = ".woodpecker/lanes.yml"
+// otherwise. It is outside .woodpecker/ because Woodpecker parses every YAML
+// file there as a workflow, and lanes.yml is not one: it errors every pipeline.
+const DefaultPath = "lanes.yml"
 
 // Lane is a set of files and the steps that pass or fail on them.
 type Lane struct {
