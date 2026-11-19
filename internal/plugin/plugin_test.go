@@ -644,29 +644,6 @@ func TestVerify(t *testing.T) {
 	}
 }
 
-// Woodpecker parses every YAML file in .woodpecker/ as a workflow, so a lane
-// config there fails the pipeline: every mode but files says so.
-func TestWarnsOnConfigInWorkflowDir(t *testing.T) {
-	w := newWS(t)
-	if out, err := run(w.settings(settings.ModeVerify)); err != nil || strings.Contains(out, "WARNING") {
-		t.Fatalf("verify of the default config: %v\n%s", err, out)
-	}
-
-	testgit.Write(t, w.dir, map[string]string{".woodpecker/lanes.yml": lanesYML})
-	testgit.Commit(t, w.dir, "config in .woodpecker/")
-	s := w.settings(settings.ModeVerify)
-	s.Config = ".woodpecker/lanes.yml"
-	out, err := run(s)
-	if err != nil || !strings.Contains(out, "WARNING: config .woodpecker/lanes.yml is inside .woodpecker/") {
-		t.Fatalf("verify of a config in .woodpecker/: %v\n%s", err, out)
-	}
-
-	s.Mode, s.Lane = settings.ModeFiles, "web"
-	if out, err := run(s); err != nil || strings.Contains(out, "WARNING") {
-		t.Fatalf("files must print only files: %v\n%s", err, out)
-	}
-}
-
 func TestFiles(t *testing.T) {
 	w := newWS(t)
 	s := w.settings(settings.ModeFiles)

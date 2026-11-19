@@ -25,12 +25,6 @@ import (
 // file there as a workflow, and lanes.yml is not one: it errors every pipeline.
 const DefaultPath = "lanes.yml"
 
-// InWorkflowDir reports whether a config path is inside .woodpecker/, where
-// Woodpecker would parse the lane config as a workflow and fail.
-func InWorkflowDir(configPath string) bool {
-	return strings.HasPrefix(path.Clean(configPath), ".woodpecker/")
-}
-
 // Lane is a set of files and the steps that pass or fail on them.
 type Lane struct {
 	Name    string   `yaml:"-"`

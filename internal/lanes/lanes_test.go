@@ -63,19 +63,3 @@ func TestParseRefuses(t *testing.T) {
 		})
 	}
 }
-
-func TestInWorkflowDir(t *testing.T) {
-	for p, want := range map[string]bool{
-		".woodpecker/lanes.yml":    true,
-		"./.woodpecker/lanes.yml":  true,
-		".woodpecker/ci/lanes.yml": true,
-		DefaultPath:                false,
-		"ci/lanes.yml":             false,
-		".woodpeckerx/lanes.yml":   false,
-		".woodpecker.yml":          false,
-	} {
-		if got := InWorkflowDir(p); got != want {
-			t.Errorf("InWorkflowDir(%q) = %v, want %v", p, got, want)
-		}
-	}
-}

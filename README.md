@@ -24,7 +24,7 @@ Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). This
 
 ## `lanes.yml`
 
-Keep it at the repository root (the default), or anywhere else **outside `.woodpecker/`**: Woodpecker parses every YAML file in `.woodpecker/` as a workflow, so a lane config there fails every pipeline with `Invalid or missing steps section`. Every mode but `files` warns when `config` points inside `.woodpecker/`.
+Keep it at the repository root (the default), or anywhere else **outside `.woodpecker/`**: Woodpecker parses every YAML file in `.woodpecker/` as a workflow, so a lane config there fails every pipeline with `Invalid or missing steps section`.
 
 ```yaml
 lanes:

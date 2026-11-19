@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/gitremote"
-	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/lanes"
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/settings"
 	"github.com/vcheesbrough/woodpecker-plugin-lane-skip/internal/tree"
 )
@@ -41,10 +40,6 @@ func Run(s settings.Settings, out io.Writer) error {
 	}
 	if s.Now == nil {
 		s.Now = time.Now
-	}
-	// files prints a file list for scripts to read, so it stays clean.
-	if s.Mode != settings.ModeFiles && lanes.InWorkflowDir(s.Config) {
-		logf(out, "WARNING: config %s is inside .woodpecker/, where Woodpecker parses every YAML file as a workflow and fails the pipeline on it; move it to the repository root (lanes.yml, the default)", s.Config)
 	}
 	switch s.Mode {
 	case settings.ModeCheck:
